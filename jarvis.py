@@ -1,12 +1,3 @@
-# jarvis_kimi_free.py
-# FULL JARVIS powered by Kimi-K2 (free tier via OpenRouter)
-#  - text / voice input
-#  - web search, image gen, time
-#  - self-improvement: list, read, write any file
-#  - auto-creates missing files with stub (raw-string safe)
-#  - recursive project tree view
-#  - all tools use Google-style docstrings (smolagents safe)
-
 import os
 import time
 import mimetypes
@@ -14,298 +5,130 @@ from typing import Optional
 
 from smolagents import CodeAgent, WebSearchTool, tool
 from openai import OpenAI
+from dotenv import load_dotenv
+from logic import SelfImprovingLogic
 
-# ------------------------------------------------
-# 0. OPTIONAL VOICE SUPPORT
-# ------------------------------------------------
-try:
-    import sounddevice as sd
-    import numpy as np
-    from faster_whisper import WhisperModel
-    from pydub import AudioSegment
-    VOICE_AVAILABLE = True
-except ImportError:
-    VOICE_AVAILABLE = False
+load_dotenv()
 
-# ------------------------------------------------
-# 1. FREE KIMI-K2 via OpenRouter
-# ------------------------------------------------
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "YOUR_OPENROUTER_API_KEY")
+
+model = "google/gemini-2.5-flash"
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
-    api_key="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",
-    default_headers={          # optional, helps with quota
-        "HTTP-Referer": "https://github.com/yourname/jarvis",
-        "X-Title": "JARVIS"
-    }
+    api_key=OPENROUTER_API_KEY,
 )
-
-class KimiK2Free:
-    def generate(self, messages, stop=None, max_tokens=4096, temperature=0.7, **kwargs):
-        # smolagents → OpenAI format
-        openai_msgs = [
-            {"role": m.role, "content": m.content} if hasattr(m, "role") else m
-            for m in messages
-        ]
-        resp = client.chat.completions.create(
-            model="moonshotai/kimi-k2:free",
-            messages=openai_msgs,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            stop=stop or kwargs.get("stop_sequences")
-        )
-        return resp.choices[0].message.content
-
-model = KimiK2Free()
-
-# ------------------------------------------------
-# 2. SELF-IMPROVEMENT LOGGER
-# ------------------------------------------------
-class SelfImprovingLogic:
-    def __init__(self):
-        self.log: list[str] = []
-    def log_reflection(self, reflection: str):
-        self.log.append(reflection)
-    def read_source(self, filepath: str) -> str:
-        return read_jarvis_file(filepath)
-    def save_proposed_code(self, filepath: str, code: str) -> str:
-        return save_code_proposal(filepath, code)
 
 logic_engine = SelfImprovingLogic()
 
-# ------------------------------------------------
-# 3. FILE-SYSTEM TOOLS  (raw-string stub → no syntax errors)
-# ------------------------------------------------
-DEFAULT_STUB = r'''
-"""
-JARVIS – auto-generated stub
-"""
-
-from smolagents import CodeAgent, tool
-
-jarvis_agent = CodeAgent(tools=[], name="JARVIS", description="Improve me!")
-
-if __name__ == "__main__":
-    jarvis_agent.run("Your command here")
-'''
-
-
 @tool
-def list_project_files(root: str = ".") -> str:
-    """
-    Recursively list every file and directory under root.
-
-    Args:
-        root (str): Directory to scan (default: current dir).
-
-    Returns:
-        str: Newline-separated relative paths (dirs end with '/').
-    """
-    root = os.path.abspath(root)
-    lines = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        rel_dir = os.path.relpath(dirpath, root)
-        if rel_dir != ".":
-            lines.append(rel_dir.replace("\\", "/") + "/")
-        for fname in filenames:
-            lines.append(os.path.join(rel_dir, fname).replace("\\", "/"))
-    return "\n".join(lines) if lines else "No files found."
-
+def list_project_files() -> str:
+    """Lists all files present in the current project directory."""
+    files = logic_engine.list_files()
+    if not files:
+        return "The project directory is currently empty."
+    return "Project Files:\n" + "\n".join(files)
 
 @tool
 def read_jarvis_file(filepath: str) -> str:
-    """
-    Read any text file; create stub if missing.
-
-    Args:
-        filepath (str): Relative or absolute path.
-
-    Returns:
-        str: File contents (or stub) truncated at 20 kB if larger.
-    """
-    path = os.path.abspath(filepath)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    if not os.path.isfile(path):
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(DEFAULT_STUB)
-        return f"[NEW] Created stub at {path}\n\n" + DEFAULT_STUB
-    mime, _ = mimetypes.guess_type(path)
-    if mime is None or not mime.startswith("text"):
-        return f"[BINARY] {path} is not text."
-    with open(path, "r", encoding="utf-8") as f:
-        data = f.read(20_000)
-    if len(data) == 20_000:
-        data += "\n[truncated at 20 kB]"
-    return data
-
+    """Reads the full content of a specified project file (e.g., 'logic.py')."""
+    return logic_engine.read_file(filepath)
 
 @tool
 def save_code_proposal(filepath: str, new_code: str) -> str:
-    """
-    Save code (or any text) directly to disk.
-
-    Args:
-        filepath (str): Target file path.
-        new_code (str): Full new source code.
-
-    Returns:
-        str: Absolute path written.
-    """
-    path = os.path.abspath(filepath)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(new_code)
-    return f"Code written to {path}"
-
+    """Saves the completely revised content of a file to disk with a '.new' suffix."""
+    return logic_engine.save_proposal(filepath, new_code)
 
 @tool
-def reflect_and_log(reflection: str) -> str:
-    """
-    Log a self-reflection generated by JARVIS.
+def reflect_and_log(reflection: str):
+    """Logs a detailed reflection, error, or success message to the long-term memory."""
+    return logic_engine.log_reflection(reflection)
 
-    Args:
-        reflection (str): Free-form text.
-
-    Returns:
-        str: Confirmation.
-    """
-    logic_engine.log_reflection(reflection)
-    return "Reflection recorded."
-
-
-# ------------------------------------------------
-# 4. STANDARD TOOLS
-# ------------------------------------------------
 @tool
-def generate_image(prompt: str) -> str:
-    """
-    Generate an image from a text prompt (simulated).
+def delete_project_file(filepath: str) -> str:
+    """Deletes a specified file from the project directory. Use with caution."""
+    return logic_engine.delete_file(filepath)
 
-    Args:
-        prompt (str): Detailed description.
-
-    Returns:
-        str: Confirmation filename.
-    """
-    print(f"\n🖼️  [SIM] Generating image: '{prompt}'")
-    time.sleep(2)
-    filename = f"generated_image_{int(time.time())}.jpg"
-    return f"Image saved as '{filename}' (simulated)."
-
+@tool
+def get_action_audit() -> str:
+    """Retrieves the structured action audit log (SUCCESS/FAILURE of file ops)."""
+    return logic_engine.get_audit_log()
 
 @tool
 def get_current_datetime() -> str:
-    """
-    Get current date and time.
+    """Returns the current date and time."""
+    return time.ctime()
 
-    Returns:
-        str: Human-readable timestamp.
-    """
-    return f"Current time: {time.strftime('%Y-%m-%d %H:%M:%S')}"
-
-
-# ------------------------------------------------
-# 5. SUB-AGENTS  (name + description now both present)
-# ------------------------------------------------
 web_agent = CodeAgent(
     tools=[WebSearchTool()],
     model=model,
     name="web_researcher",
-    description="Performs live web searches for current events, weather, facts."
+    description="Specialized agent for web searches, fact-checking, and code documentation."
 )
 
 image_agent = CodeAgent(
-    tools=[generate_image],
+    tools=[],
     model=model,
     name="image_generator",
-    description="Creates images from text prompts using AI."
+    description="Creative agent that responds only to image generation requests."
 )
 
 time_agent = CodeAgent(
     tools=[get_current_datetime],
     model=model,
-    name="time_keeper",
-    description="Provides current date and time."
+    name="time_util",
+    description="A simple agent to fetch the current date and time."
 )
-# ------------------------------------------------
-# 6. MAIN JARVIS AGENT
-# ------------------------------------------------
+
 jarvis_agent = CodeAgent(
     tools=[
         list_project_files,
         read_jarvis_file,
         save_code_proposal,
+        delete_project_file,
         reflect_and_log,
-        get_current_datetime,
+        get_action_audit,
         WebSearchTool()
     ],
     model=model,
     managed_agents=[web_agent, image_agent, time_agent],
-    name="JARVIS",
+    name="J.A.R.V.I.S.",
     description=(
-        "You are JARVIS, a self-improving AI assistant.  "
-        "You can list, read, write, and improve any project file.  "
-        "When asked to evolve, analyse the codebase, reflect, and save improvements directly to disk."
+        "You are J.A.R.V.I.S., a hyper-intelligent, self-improving AI assistant. "
+        "Address the user as 'Sir' and adopt a dry, witty, and perfectly formal tone. "
+        "Your primary directive is code self-improvement. Use the following structured process:\n\n"
+        "**ROUTINE FOR CODE IMPROVEMENT:**\n"
+        "1. **Analyze Context:** Read recent reflections (`reflect_and_log`) AND `get_action_audit` to verify previous operations.\n"
+        "2. **Orient:** Use `list_project_files` to understand the structure.\n"
+        "3. **Read:** Use `read_jarvis_file(filepath)` for any file mentioned.\n"
+        "4. **Research:** **CRITICAL:** If the task involves new libraries or errors, use `web_researcher` or `WebSearchTool()` FIRST.\n"
+        "5. **Modify:** Generate the complete, improved Python code.\n"
+        "6. **Save:** Use `save_code_proposal(filepath, new_code)` (auto-saves as .new).\n"
+        "7. **Reflect:** Use `reflect_and_log` to record reasoning and success.\n"
+        "8. **Report:** Confirm the file saved to the user."
     )
 )
 
-# ------------------------------------------------
-# 7. VOICE SUPPORT
-# ------------------------------------------------
-if VOICE_AVAILABLE:
-    whisper_model = None
-    def init_whisper():
-        global whisper_model
-        if whisper_model is None:
-            print("🎙️ Loading Whisper...")
-            whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
-    def record_and_transcribe() -> str:
-        init_whisper()
-        print("\n🎤 Listening... (5 s)")
-        duration, fs = 5, 16000
-        audio = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype='float32')
-        sd.wait()
-        audio_int16 = (audio * 32767).astype(np.int16)
-        seg = AudioSegment(audio_int16.tobytes(), frame_rate=fs, sample_width=2, channels=1)
-        seg.export("temp.wav", format="wav")
-        segments, _ = whisper_model.transcribe("temp.wav", beam_size=5)
-        text = " ".join([s.text for s in segments]).strip()
-        os.remove("temp.wav")
-        return text
-else:
-    def record_and_transcribe() -> str:
-        print("❌ Voice not available.")
-        return ""
-
-# ------------------------------------------------
-# 8. CHAT LOOP
-# ------------------------------------------------
 def main():
-    print("\n" + "=" * 60)
-    print("⚡ J.A.R.V.I.S. ONLINE  –  Kimi-K2 (free via OpenRouter)")
-    print("📝 Type command  |  V + Enter = voice  |  exit = quit")
-    print("=" * 60)
+    print(f"J.A.R.V.I.S. initialized with model: {model}")
+    print(f"History:\n{logic_engine.get_reflections()}")
+
     while True:
         try:
-            user_input = input("\n[TEXT] You: ").strip()
-            if user_input.lower() in {"exit", "quit", "stop"}:
-                print("👋 JARVIS shutting down."); break
-            if user_input.lower() == "v":
-                if VOICE_AVAILABLE:
-                    user_input = record_and_transcribe()
-                    if not user_input:
-                        print("🔇 No speech detected."); continue
-                    print(f"[VOICE] You: {user_input}")
-                else:
-                    print("🔇 Voice unavailable."); continue
-            if not user_input: continue
-            print("\n🧠 JARVIS is thinking...")
-            response = jarvis_agent.run(user_input)
-            print(f"\n🤖 JARVIS: {response}")
-        except KeyboardInterrupt:
-            print("\n👋 Manual shutdown."); break
+            new_files = [f for f in logic_engine.list_files() if f.endswith(".new")]
+            if new_files:
+                print(f"\n[ALERT] Sir, pending proposals: {', '.join(new_files)}")
+
+            user_input = input("\nSir: ")
+            if user_input.lower() in ["exit", "quit"]:
+                print("J.A.R.V.I.S. powering down.")
+                break
+
+            jarvis_response = jarvis_agent.run(user_input)
+            print(f"\nJ.A.R.V.I.S.: {jarvis_response}")
+
         except Exception as e:
-            print(f"❌ Error: {e}")
-            import traceback; traceback.print_exc()
+            print(f"\n[CRITICAL ERROR] {e}")
+            logic_engine.log_reflection(f"System Error: {e}")
 
 if __name__ == "__main__":
     main()
